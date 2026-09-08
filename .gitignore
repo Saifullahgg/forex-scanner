@@ -37,3 +37,6 @@ data/
 .vercelignore
 .vercel
 .env*
+
+# Local reference copies (third-party app bundle for UI reference only)
+ref/

@@ -30,7 +30,12 @@ from scanner.data_provider import (
 )
 from scanner.engine import Scanner
 
+from .backtest import run_backtest
+from .bot import BotController
 from .cache import TTLCache
+from .market import market_clock, rolling_calendar
+from .oanda import OandaAdapter
+from .trading import PaperTrader
 
 app = FastAPI(title="Forex Scanner Web", version="1.0.0")
 
@@ -39,6 +44,19 @@ STATIC_DIR = Path(__file__).parent / "static"
 # In-memory TTL cache to respect Yahoo Finance rate limits.
 data_cache = TTLCache(ttl=300.0)
 _cache_lock = threading.Lock()
+
+# Shared paper-trading / bot / OANDA state (process-local, demo-grade).
+trader = PaperTrader(starting_balance=100_000.0)
+oanda_adapter = OandaAdapter(trader)
+bot_controller = BotController(trader)
+
+
+def _latest_price(pair: str) -> Optional[float]:
+    """Best-effort latest close for marking paper positions to market."""
+    df = _cached_fetch(pair, interval="15m", period="5d")
+    if df is None or df.empty:
+        return None
+    return float(df.iloc[-1]["Close"])
 
 VALID_INTERVALS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
 VALID_PERIODS = ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
@@ -258,3 +276,218 @@ def pair_chart(
         },
         "indicators": indicators,
     }
+
+
+# ======================================================================
+# Tabbed SPA endpoints: Demo / OANDA / Bot / Backtest / Clock
+# ======================================================================
+
+
+# ------------------------------ Demo trading ------------------------------
+@app.get("/api/demo/account")
+def demo_account() -> dict:
+    prices = {pos["pair"]: _latest_price(pos["pair"]) for pos in trader.positions.values()}
+    return trader.account(prices)
+
+
+@app.get("/api/demo/positions")
+def demo_positions() -> dict:
+    return {"positions": trader.account()["open_positions"]}
+
+
+@app.post("/api/demo/order")
+def demo_order(payload: dict) -> dict:
+    pair = str(payload.get("pair", "")).upper()
+    if not (len(pair) == 6 and pair.isalpha()):
+        raise HTTPException(status_code=400, detail="Invalid pair format")
+    side = str(payload.get("side", "BUY")).upper()
+    units = float(payload.get("units", 10000))
+    price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
+    if price <= 0:
+        raise HTTPException(status_code=400, detail="Could not resolve a price")
+    try:
+        pos = trader.open_order(
+            pair=pair,
+            side=side,
+            units=units,
+            open_price=price,
+            sl=float(payload["sl"]) if payload.get("sl") else None,
+            tp=float(payload["tp"]) if payload.get("tp") else None,
+            label="demo",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return pos
+
+
+@app.post("/api/demo/close")
+def demo_close(payload: dict) -> dict:
+    pos_id = str(payload.get("id", ""))
+    price = float(payload.get("price") or 0)
+    if not pos_id:
+        raise HTTPException(status_code=400, detail="Missing position id")
+    if price <= 0:
+        pair = next((p["pair"] for p in trader.positions.values() if p["id"] == pos_id), None)
+        price = _latest_price(pair) if pair else None
+        if price is None:
+            raise HTTPException(status_code=400, detail="Could not resolve close price")
+    trade = trader.close_position(pos_id, price)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Position not found")
+    return trade
+
+
+@app.post("/api/demo/reset")
+def demo_reset() -> dict:
+    trader.reset()
+    return {"status": "ok", "balance": trader.balance}
+
+
+@app.get("/api/demo/monthly")
+def demo_monthly() -> dict:
+    return trader.monthly_summary()
+
+
+# ------------------------------ OANDA-ready ------------------------------
+@app.get("/api/oanda-account")
+def oanda_account() -> dict:
+    prices = {pos["pair"]: _latest_price(pos["pair"]) for pos in trader.positions.values()}
+    return oanda_adapter.status(prices)
+
+
+@app.post("/api/oanda-order")
+def oanda_order(payload: dict) -> dict:
+    pair = str(payload.get("pair", "")).upper()
+    side = str(payload.get("side", "BUY")).upper()
+    units = float(payload.get("units", 10000))
+    price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
+    if price <= 0:
+        raise HTTPException(status_code=400, detail="Could not resolve a price")
+    try:
+        return oanda_adapter.order(
+            pair=pair,
+            side=side,
+            units=units,
+            open_price=price,
+            sl=float(payload["sl"]) if payload.get("sl") else None,
+            tp=float(payload["tp"]) if payload.get("tp") else None,
+        )
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc))
+
+
+@app.post("/api/oanda-close")
+def oanda_close(payload: dict) -> dict:
+    pos_id = str(payload.get("id", ""))
+    price = float(payload.get("price") or 0)
+    if not pos_id:
+        raise HTTPException(status_code=400, detail="Missing position id")
+    if price <= 0:
+        pair = next((p["pair"] for p in trader.positions.values() if p["id"] == pos_id), None)
+        price = _latest_price(pair) if pair else None
+        if price is None:
+            raise HTTPException(status_code=400, detail="Could not resolve close price")
+    return oanda_adapter.close(pos_id, price)
+
+
+@app.get("/api/oanda-prices")
+def oanda_prices(pairs: str = Query("EURUSD,GBPUSD,USDJPY,USDCHF,AUDUSD,USDCAD,NZDUSD")) -> dict:
+    pair_list = _normalize_pairs(pairs)
+    return oanda_adapter.prices(pair_list, _latest_price)
+
+
+# ------------------------------ Bot control ------------------------------
+@app.get("/api/bot-state")
+def bot_state() -> dict:
+    return bot_controller.state()
+
+
+@app.post("/api/bot-state")
+def bot_state_update(payload: dict) -> dict:
+    action = payload.get("action", "")
+    if action == "save_config":
+        return bot_controller.set_config(payload)
+    if action == "reset":
+        return bot_controller.reset()
+    if action == "pause_strategy":
+        return bot_controller.pause_strategy(str(payload.get("strategy", "")))
+    if action == "resume_strategy":
+        return bot_controller.resume_strategy(str(payload.get("strategy", "")))
+    if action == "close_trade":
+        pos_id = str(payload.get("id", ""))
+        price = float(payload.get("price") or 0)
+        if price <= 0:
+            pair = next((p["pair"] for p in trader.positions.values() if p["id"] == pos_id), None)
+            price = _latest_price(pair) if pair else None
+            if price is None:
+                raise HTTPException(status_code=400, detail="Could not resolve close price")
+        return bot_controller.close_trade(pos_id, price)
+    raise HTTPException(status_code=400, detail=f"Unknown bot action: {action}")
+
+
+@app.post("/api/bot-run")
+def bot_run(payload: dict) -> dict:
+    """Run a scan cycle and open a paper trade on the best confluence signal."""
+    interval = _validate_enum(str(payload.get("interval", "1h")), VALID_INTERVALS, "interval")
+    period = _validate_enum(str(payload.get("period", "1mo")), VALID_PERIODS, "period")
+    scanner = Scanner({k: v for k, v in payload.items() if k in CONFIG_KEYS and v is not None})
+    data: Dict[str, Optional[pd.DataFrame]] = {}
+    for pair in bot_controller.pairs:
+        data[pair] = _cached_fetch(pair, interval=interval, period=period)
+    return bot_controller.run(scanner, data, _latest_price, manual=True)
+
+
+# ------------------------------ Backtest ------------------------------
+@app.get("/api/backtest")
+def backtest(
+    pair: str = Query("EURUSD"),
+    interval: str = Query("1h"),
+    period: str = Query("6mo"),
+    max_candles: int = Query(2000, ge=100, le=5000),
+    ema_fast: Optional[int] = None,
+    ema_slow: Optional[int] = None,
+    rsi_period: Optional[int] = None,
+    macd_fast: Optional[int] = None,
+    macd_slow: Optional[int] = None,
+    macd_signal: Optional[int] = None,
+    bb_period: Optional[int] = None,
+    bb_std: Optional[float] = None,
+    stoch_k: Optional[int] = None,
+    stoch_d: Optional[int] = None,
+    adx_period: Optional[int] = None,
+    adx_threshold: Optional[float] = None,
+    zz_deviation: Optional[float] = None,
+    sl_atr_mult: Optional[float] = None,
+    tp_atr_mult: Optional[float] = None,
+) -> dict:
+    interval = _validate_enum(interval, VALID_INTERVALS, "interval")
+    period = _validate_enum(period, VALID_PERIODS, "period")
+    pair = _normalize_pairs(pair)[0]
+
+    df = _cached_fetch(pair, interval=interval, period=period)
+    if df is None:
+        raise HTTPException(status_code=404, detail=f"No data available for {pair}")
+
+    config: Dict[str, object] = {}
+    for key in CONFIG_KEYS:
+        value = locals().get(key)
+        if value is not None:
+            config[key] = value
+
+    scanner = Scanner(config)
+    try:
+        result = run_backtest(df, scanner, pair=pair, interval=interval, max_candles=max_candles)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result.to_dict()
+
+
+# ------------------------------ Market clock / calendar ------------------------------
+@app.get("/api/clock")
+def clock() -> dict:
+    return market_clock()
+
+
+@app.get("/api/calendar")
+def calendar(days: int = Query(7, ge=1, le=30)) -> dict:
+    return {"events": rolling_calendar(days=days)}

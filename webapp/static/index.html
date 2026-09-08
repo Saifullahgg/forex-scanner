@@ -1,164 +1,418 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Forex Scanner Dashboard</title>
-  <link rel="stylesheet" href="/static/style.css" />
-  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#07070f" />
+<meta name="apple-mobile-web-app-title" content="FX Scanner" />
+<title>Forex Signal Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+<div id="app">
+  <!-- ======================= TOP BAR ======================= -->
   <header class="topbar">
     <div class="brand">
-      <span class="logo">FX</span>
-      <div>
-        <h1>Forex Scanner</h1>
-        <p class="subtitle">8-strategy consensus engine &middot; ATR risk management</p>
-      </div>
+      <span class="brand-mark">FX</span>
+      <span class="brand-name">Forex Scanner</span>
+      <span class="brand-badge">v2 · tabs</span>
     </div>
     <div class="topbar-right">
-      <span id="api-status" class="status-dot offline" title="API status"></span>
-      <span id="scan-time" class="scan-time">Not scanned</span>
-      <button id="btn-refresh" class="btn" title="Scan now">Refresh</button>
+      <span class="pill" id="api-status">connecting…</span>
+      <span class="pill dim" id="utc-clock">--:--:-- UTC</span>
     </div>
   </header>
 
-  <main class="layout">
-    <!-- Control sidebar -->
-    <aside class="sidebar">
-      <section class="card">
-        <h2>Scan Settings</h2>
+  <!-- ======================= TAB BAR ======================= -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-tab="scanner"><span class="tab-ico">📡</span>Scanner</button>
+    <button class="tab" data-tab="chart"><span class="tab-ico">📈</span>Chart</button>
+    <button class="tab" data-tab="demo"><span class="tab-ico">💰</span>Demo</button>
+    <button class="tab" data-tab="oanda"><span class="tab-ico">🏦</span>OANDA</button>
+    <button class="tab" data-tab="bot"><span class="tab-ico">🤖</span>Bot</button>
+    <button class="tab" data-tab="backtest"><span class="tab-ico">⏪</span>Backtest</button>
+    <button class="tab" data-tab="clock"><span class="tab-ico">🕐</span>Clock</button>
+  </nav>
 
-        <div class="field">
-          <label for="interval">Interval</label>
-          <select id="interval">
-            <option value="1m">1 minute</option>
-            <option value="5m">5 minutes</option>
-            <option value="15m">15 minutes</option>
-            <option value="30m">30 minutes</option>
-            <option value="1h" selected>1 hour</option>
-            <option value="4h">4 hours</option>
-            <option value="1d">1 day</option>
-          </select>
+  <!-- ======================= PANELS ======================= -->
+  <main class="panels">
+
+    <!-- ##################### SCANNER ##################### -->
+    <section class="panel active" id="panel-scanner">
+      <div class="panel-head">
+        <h2>Live Scanner</h2>
+        <div class="head-actions">
+          <span id="scan-time" class="pill dim">not scanned</span>
+          <button class="btn" id="btn-refresh">⟳ Scan Now</button>
         </div>
+      </div>
 
-        <div class="field">
-          <label for="period">Period</label>
-          <select id="period">
-            <option value="5d">5 days</option>
-            <option value="1mo" selected>1 month</option>
-            <option value="3mo">3 months</option>
-            <option value="6mo">6 months</option>
-            <option value="1y">1 year</option>
-            <option value="2y">2 years</option>
-            <option value="5y">5 years</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Pair category</label>
-          <div class="segmented" id="category">
-            <button data-cat="major" class="active">Major</button>
-            <button data-cat="cross">Cross</button>
-            <button data-cat="exotic">Exotic</button>
-            <button data-cat="all">All</button>
+      <div class="controls-grid">
+        <div class="card">
+          <h3>Scan Settings</h3>
+          <div class="field-row">
+            <label>Interval</label>
+            <select id="interval">
+              <option value="1m">1 minute</option>
+              <option value="5m">5 minutes</option>
+              <option value="15m">15 minutes</option>
+              <option value="30m">30 minutes</option>
+              <option value="1h" selected>1 hour</option>
+              <option value="4h">4 hours</option>
+              <option value="1d">1 day</option>
+            </select>
           </div>
+          <div class="field-row">
+            <label>Period</label>
+            <select id="period">
+              <option value="5d">5 days</option>
+              <option value="1mo">1 month</option>
+              <option value="3mo" selected>3 months</option>
+              <option value="6mo">6 months</option>
+              <option value="1y">1 year</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <label>Category</label>
+            <div class="segmented" id="category">
+              <button class="seg active" data-cat="major">Major</button>
+              <button class="seg" data-cat="cross">Cross</button>
+              <button class="seg" data-cat="exotic">Exotic</button>
+              <button class="seg" data-cat="all">All</button>
+            </div>
+          </div>
+          <div class="field-row">
+            <label>Pairs</label>
+            <select id="pairs" multiple size="6"></select>
+          </div>
+          <div class="field-row">
+            <label>Auto-refresh</label>
+            <div class="segmented" id="auto-refresh">
+              <button class="seg" data-ms="0">Off</button>
+              <button class="seg active" data-ms="60000">1m</button>
+              <button class="seg" data-ms="300000">5m</button>
+            </div>
+          </div>
+          <button class="btn primary block" id="btn-scan">▶ Run Scan</button>
         </div>
 
-        <div class="field">
-          <label for="pairs">Pairs (comma-separated)</label>
-          <input id="pairs" type="text" placeholder="EURUSD,GBPUSD,USDJPY" />
+        <div class="card">
+          <h3>Strategies</h3>
+          <div id="strategy-toggles" class="toggle-list"></div>
+          <h3 class="mt">Config</h3>
+          <div id="config-fields" class="config-grid"></div>
         </div>
+      </div>
 
-        <div class="field">
-          <label for="auto-refresh">Auto refresh</label>
-          <select id="auto-refresh">
-            <option value="0">Off</option>
-            <option value="60">Every 1 min</option>
-            <option value="300" selected>Every 5 min</option>
-            <option value="600">Every 10 min</option>
-            <option value="1800">Every 30 min</option>
-          </select>
-        </div>
+      <div id="scan-loading" class="loading hidden"><div class="spinner"></div><span>Scanning markets…</span></div>
+      <div id="scan-error" class="error hidden"></div>
 
-        <button id="btn-scan" class="btn primary">Run Scan</button>
-      </section>
-
-      <section class="card" id="settings-card">
-        <h2>Strategy Settings</h2>
-        <div id="strategy-toggles" class="toggles"></div>
-        <h2 class="mt">Risk & Config</h2>
-        <div id="config-fields"></div>
-      </section>
-    </aside>
-
-    <!-- Main content -->
-    <section class="content">
-      <div id="loading" class="loading hidden">Scanning&hellip;</div>
-      <div id="error" class="error hidden"></div>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>Market Scan</h2>
-          <span id="result-count" class="muted"></span>
-        </div>
-        <div class="table-wrap">
-          <table id="results-table">
+      <div id="results-wrap" class="hidden">
+        <div class="result-stats" id="result-stats"></div>
+        <div class="table-scroll">
+          <table class="table">
             <thead>
               <tr>
-                <th>Pair</th>
-                <th>Price</th>
-                <th>Signal</th>
-                <th>Strength</th>
-                <th>SL</th>
-                <th>TP</th>
-                <th>R:R</th>
-                <th>Votes</th>
-                <th>Key Reasons</th>
+                <th>Pair</th><th>Price</th><th>Signal</th><th>Strength</th>
+                <th>SL</th><th>TP</th><th>R:R</th><th>Votes</th><th>Key Reasons</th><th></th>
               </tr>
             </thead>
             <tbody id="results-body"></tbody>
           </table>
         </div>
-        <div id="empty-state" class="empty hidden">No signals yet &mdash; run a scan.</div>
-      </section>
+        <div id="empty-state" class="empty hidden">No actionable signals right now.</div>
+      </div>
     </section>
+
+    <!-- ##################### CHART ##################### -->
+    <section class="panel" id="panel-chart">
+      <div class="panel-head">
+        <h2>Chart</h2>
+        <div class="head-actions">
+          <select id="chart-pair" class="mono"></select>
+          <select id="chart-interval">
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="30m">30m</option>
+            <option value="1h" selected>1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+          </select>
+          <select id="chart-period">
+            <option value="1mo">1M</option>
+            <option value="3mo" selected>3M</option>
+            <option value="6mo">6M</option>
+            <option value="1y">1Y</option>
+          </select>
+          <button class="btn" id="btn-chart-load">Load</button>
+        </div>
+      </div>
+      <div id="chart-status" class="pill dim">select a pair to load</div>
+      <div id="chart-container" class="chart-container"></div>
+    </section>
+
+    <!-- ##################### DEMO ##################### -->
+    <section class="panel" id="panel-demo">
+      <div class="panel-head">
+        <h2>Paper Trading Demo</h2>
+        <div class="head-actions">
+          <span id="demo-mode" class="pill">paper</span>
+          <button class="btn danger" id="btn-demo-reset">Reset Account</button>
+        </div>
+      </div>
+
+      <div class="stat-cards" id="demo-stats">
+        <div class="stat-card"><span class="stat-label">Balance</span><span class="stat-value" id="demo-balance">—</span></div>
+        <div class="stat-card"><span class="stat-label">Equity</span><span class="stat-value" id="demo-equity">—</span></div>
+        <div class="stat-card"><span class="stat-label">Unrealized P&L</span><span class="stat-value" id="demo-upnl">—</span></div>
+        <div class="stat-card"><span class="stat-label">Open Positions</span><span class="stat-value" id="demo-open">0</span></div>
+        <div class="stat-card"><span class="stat-label">Closed Trades</span><span class="stat-value" id="demo-closed">0</span></div>
+        <div class="stat-card"><span class="stat-label">Win Rate</span><span class="stat-value" id="demo-winrate">—</span></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h3>Open Position</h3>
+          <div class="field-row"><label>Pair</label><select id="demo-pair"></select></div>
+          <div class="field-row"><label>Side</label>
+            <div class="segmented">
+              <button class="seg buy active" id="demo-side-buy">BUY</button>
+              <button class="seg sell" id="demo-side-sell">SELL</button>
+            </div>
+          </div>
+          <div class="field-row"><label>Units (1k = 1000)</label><input id="demo-units" type="number" value="10000" step="1000" min="1000" /></div>
+          <div class="field-row"><label>Entry Price</label><input id="demo-entry" type="number" step="0.00001" placeholder="auto (live price)" /></div>
+          <div class="field-row"><label>Stop Loss</label><input id="demo-sl" type="number" step="0.00001" placeholder="optional" /></div>
+          <div class="field-row"><label>Take Profit</label><input id="demo-tp" type="number" step="0.00001" placeholder="optional" /></div>
+          <button class="btn primary block" id="btn-demo-open">Open Trade</button>
+          <div id="demo-msg" class="msg hidden"></div>
+        </div>
+
+        <div class="card">
+          <h3>Open Positions</h3>
+          <div class="table-scroll sm">
+            <table class="table">
+              <thead><tr><th>ID</th><th>Pair</th><th>Side</th><th>Units</th><th>Entry</th><th>P&L</th><th></th></tr></thead>
+              <tbody id="demo-positions"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <h3>Trade History</h3>
+        <div class="table-scroll sm">
+          <table class="table">
+            <thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Entry</th><th>Exit</th><th>Pips</th><th>P&L</th></tr></thead>
+            <tbody id="demo-history"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ##################### OANDA ##################### -->
+    <section class="panel" id="panel-oanda">
+      <div class="panel-head">
+        <h2>OANDA Ready Account</h2>
+        <div class="head-actions">
+          <span id="oanda-mode" class="pill">paper</span>
+          <span id="oanda-env" class="pill dim">practice</span>
+        </div>
+      </div>
+
+      <div class="stat-cards" id="oanda-stats">
+        <div class="stat-card"><span class="stat-label">Balance</span><span class="stat-value" id="oanda-balance">—</span></div>
+        <div class="stat-card"><span class="stat-label">Equity</span><span class="stat-value" id="oanda-equity">—</span></div>
+        <div class="stat-card"><span class="stat-label">Open P&L</span><span class="stat-value" id="oanda-upnl">—</span></div>
+        <div class="stat-card"><span class="stat-label">Win Rate</span><span class="stat-value" id="oanda-winrate">—</span></div>
+      </div>
+
+      <div class="card mt">
+        <h3>Quotes</h3>
+        <div class="quotes-grid" id="oanda-quotes"></div>
+      </div>
+
+      <div class="card mt">
+        <h3>Open Positions</h3>
+        <div class="table-scroll sm">
+          <table class="table">
+            <thead><tr><th>ID</th><th>Pair</th><th>Side</th><th>Units</th><th>Entry</th><th>Current</th><th>Open P&L</th><th></th></tr></thead>
+            <tbody id="oanda-positions"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <h3>Monthly Assessment</h3>
+        <div class="table-scroll sm">
+          <table class="table">
+            <thead><tr><th>Month</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>Net P&L</th></tr></thead>
+            <tbody id="oanda-monthly"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ##################### BOT ##################### -->
+    <section class="panel" id="panel-bot">
+      <div class="panel-head">
+        <h2>Trading Bot</h2>
+        <div class="head-actions">
+          <span id="bot-state-pill" class="pill">stopped</span>
+          <button class="btn primary" id="btn-bot-run">▶ Run Cycle</button>
+          <button class="btn danger" id="btn-bot-reset">Reset</button>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h3>Strategy Toggles</h3>
+          <div id="bot-strategies" class="toggle-list"></div>
+          <div class="field-row mt"><label>Min Confluence (0–20)</label><input id="bot-min-score" type="number" min="0" max="20" step="0.5" value="12" /></div>
+          <button class="btn block" id="btn-bot-save">Save Config</button>
+        </div>
+        <div class="card">
+          <h3>Run Log</h3>
+          <div id="bot-log" class="log-box"></div>
+          <div class="field-row mt"><label>Last Signal</label><div id="bot-last-signal" class="msg">—</div></div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <h3>Signal History (confluence scoring)</h3>
+        <div class="table-scroll sm">
+          <table class="table">
+            <thead><tr><th>Time</th><th>Pair</th><th>Action</th><th>Score</th></tr></thead>
+            <tbody id="bot-history"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ##################### BACKTEST ##################### -->
+    <section class="panel" id="panel-backtest">
+      <div class="panel-head">
+        <h2>Backtest</h2>
+        <div class="head-actions">
+          <select id="bt-pair" class="mono"></select>
+          <select id="bt-interval">
+            <option value="15m">15m</option>
+            <option value="30m">30m</option>
+            <option value="1h" selected>1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+          </select>
+          <select id="bt-period">
+            <option value="3mo">3M</option>
+            <option value="6mo" selected>6M</option>
+            <option value="1y">1Y</option>
+            <option value="2y">2Y</option>
+          </select>
+          <select id="bt-candles">
+            <option value="500">500 candles</option>
+            <option value="1000">1k candles</option>
+            <option value="2000" selected>2k candles</option>
+            <option value="5000">5k candles</option>
+          </select>
+          <button class="btn primary" id="btn-backtest-run">▶ Run Backtest</button>
+        </div>
+      </div>
+
+      <div id="bt-loading" class="loading hidden"><div class="spinner"></div><span>Replaying candles…</span></div>
+      <div id="bt-error" class="error hidden"></div>
+
+      <div id="bt-results" class="hidden">
+        <div id="bt-verdict" class="verdict"></div>
+
+        <div class="stat-cards" id="bt-stats-grid">
+          <div class="stat-card"><span class="stat-label">Trades</span><span class="stat-value" id="bt-trades">—</span></div>
+          <div class="stat-card"><span class="stat-label">Win Rate</span><span class="stat-value" id="bt-winrate">—</span></div>
+          <div class="stat-card"><span class="stat-label">Avg Win (pips)</span><span class="stat-value" id="bt-avgwin">—</span></div>
+          <div class="stat-card"><span class="stat-label">Avg Loss (pips)</span><span class="stat-value" id="bt-avgloss">—</span></div>
+          <div class="stat-card"><span class="stat-label">Expected Value</span><span class="stat-value" id="bt-ev">—</span></div>
+          <div class="stat-card"><span class="stat-label">Largest Win</span><span class="stat-value" id="bt-lwin">—</span></div>
+          <div class="stat-card"><span class="stat-label">Largest Loss</span><span class="stat-value" id="bt-lloss">—</span></div>
+          <div class="stat-card"><span class="stat-label">Total (pips)</span><span class="stat-value" id="bt-totalpips">—</span></div>
+          <div class="stat-card"><span class="stat-label">Profit Factor</span><span class="stat-value" id="bt-pf">—</span></div>
+        </div>
+
+        <div class="card mt">
+          <h3>Equity Curve (cumulative pips)</h3>
+          <div id="bt-equity" class="equity-canvas-wrap"></div>
+        </div>
+
+        <div class="card mt">
+          <h3>Trades</h3>
+          <div class="table-scroll sm">
+            <table class="table">
+              <thead><tr><th>Entry Time</th><th>Side</th><th>Entry</th><th>Exit</th><th>Exit Time</th><th>Pips</th><th>Bars</th></tr></thead>
+              <tbody id="bt-trades"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ##################### CLOCK ##################### -->
+    <section class="panel" id="panel-clock">
+      <div class="panel-head">
+        <h2>Market Sessions Clock</h2>
+        <div class="head-actions">
+          <span id="clock-utc" class="pill dim">—</span>
+        </div>
+      </div>
+
+      <div class="stat-cards" id="clock-cards">
+        <div class="stat-card"><span class="stat-label">UTC Time</span><span class="stat-value clock-big" id="clock-time">—</span></div>
+        <div class="stat-card"><span class="stat-label">Weekday</span><span class="stat-value" id="clock-weekday">—</span></div>
+        <div class="stat-card"><span class="stat-label">Next High Impact</span><span class="stat-value" id="clock-next">—</span></div>
+      </div>
+
+      <div class="card mt">
+        <h3>24-Hour Session Timeline</h3>
+        <div class="session-timeline" id="session-timeline"></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card mt">
+          <h3>Sessions</h3>
+          <div id="session-list" class="session-list"></div>
+        </div>
+        <div class="card mt">
+          <h3>Upcoming High-Impact News</h3>
+          <div class="table-scroll sm">
+            <table class="table">
+              <thead><tr><th>Date</th><th>Currency</th><th>Event</th><th>UTC</th></tr></thead>
+              <tbody id="calendar-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
+</div>
 
-  <!-- Detail modal -->
-  <div id="modal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-head">
-        <h2 id="modal-title">Pair Detail</h2>
-        <button id="modal-close" class="btn">&times;</button>
-      </div>
-      <div class="modal-tabs">
-        <button class="tab active" data-tab="chart">Chart</button>
-        <button class="tab" data-tab="breakdown">Strategy Breakdown</button>
-        <button class="tab" data-tab="json">Raw JSON</button>
-      </div>
-
-      <div id="tab-chart" class="tab-panel">
-        <div id="chart" class="chart"></div>
-      </div>
-
-      <div id="tab-breakdown" class="tab-panel hidden">
-        <div class="risk-grid" id="risk-panel"></div>
-        <h3>Individual Strategy Signals</h3>
-        <table class="breakdown-table">
-          <thead>
-            <tr><th>Strategy</th><th>Action</th><th>Strength</th><th>Reasons</th></tr>
-          </thead>
-          <tbody id="breakdown-body"></tbody>
-        </table>
-      </div>
-
-      <div id="tab-json" class="tab-panel hidden">
-        <pre id="json-view"></pre>
-      </div>
+<!-- Detail modal -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="modal-title">Signal Details</h3>
+      <button class="btn close" id="modal-close">✕</button>
     </div>
+    <div class="modal-tabs" id="modal-tabs">
+      <button class="mtab active" data-mtab="chart">Chart</button>
+      <button class="mtab" data-mtab="breakdown">Breakdown</button>
+      <button class="mtab" data-mtab="json">JSON</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
   </div>
+</div>
 
-  <script src="/static/app.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

@@ -114,9 +114,18 @@ The **R:R ratio** is `reward / risk` and only appears for actionable signals.
 
 ## Web app (FastAPI)
 
-The same analysis engine is exposed as a web dashboard with a live scan
-table, candlestick charts with indicator overlays, per-pair strategy
-breakdown, ATR risk panel, and raw JSON views.
+The same analysis engine is exposed as a tabbed single-page web app with
+**7 tabs**, all running against the FastAPI backend:
+
+| Tab | What it does |
+|---|---|
+| **Scanner** | Live consensus scan across all pairs with filters, strategy toggles, and auto-refresh |
+| **Chart** | Candlestick chart with EMA / Bollinger / Ichimoku overlays + risk panel |
+| **Demo Trading** | Paper-trading: open/close positions, live P&L, equity, monthly history |
+| **OANDA** | OANDA-ready account/order view (falls back to paper mode until API keys are set) |
+| **Bot** | Strategy weights, enable/pause/resume toggles, run state, and signal log |
+| **Backtest** | Replay historical candles, run a strategy, view stats + equity curve |
+| **Market Clock** | Session times, market open/closed status, and upcoming economic events |
 
 ### Run locally
 
@@ -130,11 +139,27 @@ python run_web.py --port 8080     # custom port
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/` | Dashboard UI |
+| GET | `/` | Tabbed SPA dashboard UI |
 | GET | `/api/health` | Status + enabled strategy names |
 | GET | `/api/pairs` | Pairs grouped by Major / Cross / Exotic |
 | GET | `/api/scan` | Run a scan; returns `ScanResult.to_dict()` per pair |
 | GET | `/api/pair/{pair}/chart` | OHLCV + indicator series for charting |
+| GET | `/api/clock` | Market clock: UTC time, session status, session timeline |
+| GET | `/api/calendar` | Upcoming economic events for the next N days |
+| GET | `/api/backtest` | Backtest a strategy over historical candles (stats + equity curve) |
+| GET | `/api/demo/account` | Paper-trading account, open positions, history |
+| GET | `/api/demo/positions` | Open paper positions |
+| POST | `/api/demo/order` | Open a paper trade `{pair, side, units}` |
+| POST | `/api/demo/close` | Close a paper trade by position id (e.g. `T0001`) |
+| POST | `/api/demo/reset` | Reset the paper account |
+| GET | `/api/demo/monthly` | Monthly P&L history |
+| GET | `/api/oanda-account` | OANDA account (paper fallback until configured) |
+| POST | `/api/oanda-order` | Place an OANDA market order |
+| POST | `/api/oanda-close` | Close an OANDA position |
+| GET | `/api/oanda-prices` | Live quotes for requested pairs |
+| GET | `/api/bot-state` | Bot config: enabled strategies, weights, run state, log |
+| POST | `/api/bot-state` | Bot actions: `save_config` / `reset` / `pause_strategy` / `resume_strategy` / `close_trade` |
+| POST | `/api/bot-run` | Trigger a bot run cycle |
 
 `/api/scan` accepts `pairs` (comma-separated), `interval`, `period`,
 `strategies` (comma-separated names to filter), and any engine config key
@@ -175,18 +200,24 @@ forex-scanner/
 ├── cli.py                  # Command-line entry point
 ├── run_web.py              # Web app launcher (uvicorn)
 ├── requirements.txt        # CLI + web dependencies
+├── requirements-web.txt    # Web-only deps (fastapi, uvicorn)
 ├── README.md
 ├── vercel.json             # Vercel serverless config (catch-all -> api/index.py)
 ├── api/
 │   └── index.py            # Vercel ASGI entry (imports webapp.app)
 ├── webapp/
 │   ├── __init__.py
-│   ├── app.py              # FastAPI app: /api/health, /api/pairs, /api/scan, /api/pair/{pair}/chart
+│   ├── app.py              # FastAPI app: all /api routes (7-tab SPA backend)
+│   ├── bot.py              # Bot engine: strategy weights, run state, signal log (RLock)
+│   ├── trading.py          # PaperTrader: demo positions, history, monthly P&L
+│   ├── backtest.py         # Backtest replay: candles -> stats + equity curve
+│   ├── market.py           # Market clock: sessions, calendar events
+│   ├── oanda.py            # OANDA-ready client (paper fallback until keys set)
 │   ├── cache.py            # Thread-safe TTL cache for Yahoo rate-limit protection
 │   └── static/
-│       ├── index.html      # Dashboard layout
+│       ├── index.html      # Tabbed SPA shell (7 tabs)
 │       ├── style.css       # Dark trading theme
-│       └── app.js          # Scan table, filters, toggles, charts, modal, auto-refresh
+│       └── app.js          # Tabs + scanner/chart/demo/oanda/bot/backtest/clock logic
 ├── scanner/
 │   ├── __init__.py
 │   ├── data_provider.py    # yfinance data fetching
