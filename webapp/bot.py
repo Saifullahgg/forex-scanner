@@ -186,12 +186,12 @@ class BotController:
 
             best = None
             for r in results:
-                if r.action == "NEUTRAL":
+                if r.overall.action == "NEUTRAL":
                     continue
                 score = self._confluence_score(r)
                 self.signal_history.append(
                     {"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                     "pair": r.pair, "action": r.action, "score": score}
+                     "pair": r.pair, "action": r.overall.action, "score": score}
                 )
                 if score >= self.min_score and (best is None or score > best["score"]):
                     best = {"result": r, "score": score}
@@ -200,7 +200,7 @@ class BotController:
             if best is not None:
                 r = best["result"]
                 price = price_fn(r.pair) or r.price
-                side = r.action
+                side = r.overall.action
                 self.trader.open_order(
                     pair=r.pair,
                     side=side,
@@ -221,7 +221,7 @@ class BotController:
                 "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "trades_opened": opened,
                 "best_signal": (
-                    {"pair": best["result"].pair, "action": best["result"].action,
+                    {"pair": best["result"].pair, "action": best["result"].overall.action,
                      "score": best["score"], "price": best["result"].price}
                     if best else None
                 ),

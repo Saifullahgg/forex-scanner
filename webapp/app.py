@@ -12,9 +12,10 @@ Run with:
 """
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
@@ -123,6 +124,33 @@ def _cached_fetch(pair: str, interval: str, period: str) -> Optional[pd.DataFram
     return df
 
 
+def _fetch_many_parallel(
+    pairs: List[str], interval: str, period: str, max_workers: int = 5
+) -> Dict[str, Optional[pd.DataFrame]]:
+    """Fetch OHLCV for many pairs concurrently.
+
+    The serial per-pair loop makes full scans (36 pairs) take 30-60s and trips
+    Yahoo rate limits, which makes the scanner tab appear broken. Fetching with
+    a small thread pool cuts this to a few seconds while still respecting the
+    TTL cache (each worker goes through _cached_fetch).
+    """
+    if not pairs:
+        return {}
+    if len(pairs) == 1:
+        return {pairs[0]: _cached_fetch(pairs[0], interval=interval, period=period)}
+
+    def _one(pair: str) -> Tuple[str, Optional[pd.DataFrame]]:
+        return pair, _cached_fetch(pair, interval=interval, period=period)
+
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_one, pairs))
+        return dict(results)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] parallel fetch failed ({exc}); falling back to serial")
+        return {p: _cached_fetch(p, interval=interval, period=period) for p in pairs}
+
+
 @app.get("/")
 def index() -> FileResponse:
     """Serve the dashboard page."""
@@ -202,9 +230,7 @@ def scan(
             )
         scanner.strategies = [s for s in scanner.strategies if s.name in wanted]
 
-    data: Dict[str, Optional[pd.DataFrame]] = {}
-    for pair in pair_list:
-        data[pair] = _cached_fetch(pair, interval=interval, period=period)
+    data = _fetch_many_parallel(pair_list, interval=interval, period=period)
 
     results = scanner.scan_many(data)
     scanned_pairs = {r.pair for r in results}
@@ -431,9 +457,7 @@ def bot_run(payload: dict) -> dict:
     interval = _validate_enum(str(payload.get("interval", "1h")), VALID_INTERVALS, "interval")
     period = _validate_enum(str(payload.get("period", "1mo")), VALID_PERIODS, "period")
     scanner = Scanner({k: v for k, v in payload.items() if k in CONFIG_KEYS and v is not None})
-    data: Dict[str, Optional[pd.DataFrame]] = {}
-    for pair in bot_controller.pairs:
-        data[pair] = _cached_fetch(pair, interval=interval, period=period)
+    data = _fetch_many_parallel(bot_controller.pairs, interval=interval, period=period)
     return bot_controller.run(scanner, data, _latest_price, manual=True)
 
 

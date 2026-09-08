@@ -14,6 +14,7 @@ const state = {
   autoMs: 60000,
   chart: null,          // lightweight-charts instance
   chartSeries: null,
+  chartLoaded: false,   // whether chart data was loaded once
   modalChart: null,     // lightweight-charts instance in modal
   modalSeries: null,
   modalResult: null,    // ScanResult dict backing the modal
@@ -99,7 +100,14 @@ function setHtml(id, html) {
 function switchTab(name) {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${name}`));
-  if (name === "chart" && state.chart) state.chart.applyOptions({ width: $("#chart-container").clientWidth });
+  if (name === "chart") {
+    if (state.chart) {
+      state.chart.applyOptions({ width: $("#chart-container").clientWidth });
+    } else if (typeof LightweightCharts !== "undefined") {
+      initChart();
+    }
+    if (!state.chartLoaded) loadChart();
+  }
   if (name === "demo") refreshDemo();
   if (name === "oanda") refreshOanda();
   if (name === "bot") loadBotState();
@@ -364,7 +372,11 @@ function renderChartPairs() {
 }
 
 function initChart() {
-  if (state.chart || typeof LightweightCharts === "undefined") return;
+  if (state.chart) return;
+  if (typeof LightweightCharts === "undefined") {
+    setText("chart-status", "chart library failed to load — check network/console");
+    return;
+  }
   const container = $("#chart-container");
   state.chart = LightweightCharts.createChart(container, {
     width: container.clientWidth,
@@ -397,6 +409,11 @@ async function loadChart() {
   status.textContent = "loading…";
   try {
     initChart();
+    if (!state.chart) {
+      status.textContent = "chart unavailable — library did not load";
+      return;
+    }
+    state.chartLoaded = true;
     const data = await apiGet(`/api/pair/${pair}/chart?interval=${interval}&period=${period}&limit=400`);
     const ohlcv = data.ohlcv;
     const candles = [];
