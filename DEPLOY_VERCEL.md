@@ -156,6 +156,9 @@ Vercel gives you a production URL. Every future `git push` to `main` auto-redepl
 | Scan takes >10s and times out (Hobby plan) | Reduce the number of pairs (scan 1–5 pairs at a time). Free-plan functions have a max duration of 10s by default; Pro allows 60s+. |
 | Slow first load / cold start | Normal — pandas/numpy/yfinance are large. Subsequent requests are faster due to the TTL cache. |
 | Chart shows no data | Try a smaller `period` (e.g. `1mo`) or a different `interval` (`1h`, `4h`). Some exotic pairs have sparse Yahoo data. |
+| Project got created with the wrong name (e.g. `y`) during `vercel link` | Delete it in the dashboard (Project → Settings → Danger Zone → Delete Project) or run `vercel project rm <wrong-name>`. Then re-run `vercel link`, choose **Create a new project**, and type the name exactly: `forex-scanner`. |
+| `Failed to connect <repo> to project` during `vercel link` | The Vercel GitHub App has no access to that repo yet. Two fixes: (1) quickest — answer **No** to the "Connect this Git repository?" question and deploy from local files with `vercel --prod`; (2) proper — grant access: GitHub → Settings → Applications → Vercel → Configure → Repository access → grant `Saifullahgg/forex-scanner`, then re-run `vercel link` and answer **Yes**. |
+| `vercel link` shows `.env.local` / `.vercel` added to `.gitignore` | Expected — Vercel auto-ignores its local files. Commit the `.gitignore` change; `.env.local` and `.vercel/` stay local and are never pushed. |
 
 ---
 

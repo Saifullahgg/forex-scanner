@@ -35,3 +35,5 @@ data/
 .vercel/
 .now/
 .vercelignore
+.vercel
+.env*
