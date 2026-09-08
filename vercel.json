@@ -4,8 +4,5 @@
       "maxDuration": 60,
       "includeFiles": "webapp/static/**"
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
-  ]
+  }
 }
