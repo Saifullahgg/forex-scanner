@@ -112,13 +112,81 @@ The **R:R ratio** is `reward / risk` and only appears for actionable signals.
 
 ---
 
+## Web app (FastAPI)
+
+The same analysis engine is exposed as a web dashboard with a live scan
+table, candlestick charts with indicator overlays, per-pair strategy
+breakdown, ATR risk panel, and raw JSON views.
+
+### Run locally
+
+```bash
+pip install -r requirements.txt
+python run_web.py                 # -> http://127.0.0.1:8000
+python run_web.py --port 8080     # custom port
+```
+
+### API endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Dashboard UI |
+| GET | `/api/health` | Status + enabled strategy names |
+| GET | `/api/pairs` | Pairs grouped by Major / Cross / Exotic |
+| GET | `/api/scan` | Run a scan; returns `ScanResult.to_dict()` per pair |
+| GET | `/api/pair/{pair}/chart` | OHLCV + indicator series for charting |
+
+`/api/scan` accepts `pairs` (comma-separated), `interval`, `period`,
+`strategies` (comma-separated names to filter), and any engine config key
+(`ema_fast`, `sl_atr_mult`, `adx_threshold`, ...).
+
+Example:
+
+```bash
+curl "http://127.0.0.1:8000/api/scan?pairs=EURUSD,GBPUSD&interval=1h&period=1mo"
+```
+
+### Deploy to Vercel
+
+The project is configured for serverless deployment:
+
+```bash
+# 1. Install Vercel CLI (once)
+npm i -g vercel
+
+# 2. From the project root
+vercel --prod
+```
+
+- [`vercel.json`](vercel.json) routes all traffic to the ASGI app via the
+  catch-all rewrite to `api/index.py`, so every route works on Vercel.
+- `webapp/static/` is bundled into the serverless function so the dashboard
+  UI and assets are served from the same origin.
+- yfinance runs inside the function; scans hit the live Yahoo Finance API.
+  Keep auto-refresh moderate to stay within free-tier rate limits.
+- CORS is not needed — frontend and API share one origin on Vercel.
+
+---
+
 ## Project structure
 
 ```
 forex-scanner/
 ├── cli.py                  # Command-line entry point
-├── requirements.txt
+├── run_web.py              # Web app launcher (uvicorn)
+├── requirements.txt        # CLI + web dependencies
 ├── README.md
+├── vercel.json             # Vercel serverless config (catch-all -> api/index.py)
+├── api/
+│   └── index.py            # Vercel ASGI entry (imports webapp.app)
+├── webapp/
+│   ├── __init__.py
+│   ├── app.py              # FastAPI app: /api/health, /api/pairs, /api/scan, /api/pair/{pair}/chart
+│   ├── cache.py            # Thread-safe TTL cache for Yahoo rate-limit protection
+│   └── static/
+│       ├── index.html      # Dashboard layout
+│       ├── style.css       # Dark trading theme
+│       └── app.js          # Scan table, filters, toggles, charts, modal, auto-refresh
 ├── scanner/
 │   ├── __init__.py
 │   ├── data_provider.py    # yfinance data fetching
