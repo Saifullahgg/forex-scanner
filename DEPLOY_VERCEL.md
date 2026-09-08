@@ -89,23 +89,26 @@ Test the preview URL.
 vercel --prod
 ```
 
-This deploys to **production**, e.g. `https://forex-scanner.vercel.app`.
+This deploys to **production**. Your project's URL will be printed at the end.
+Note: if the bare name is already taken on Vercel, it gets a suffix — this project
+deployed as `https://forex-scanner-eta.vercel.app` (the plain `forex-scanner.vercel.app`
+belongs to a different, unrelated app). Always use the exact URL Vercel prints.
 
 ### Step 7: Verify it works
 
 - Open the production URL in your browser → you should see the dark trading dashboard.
 - Check the API health endpoint:
   ```bash
-  curl https://forex-scanner.vercel.app/api/health
+  curl https://forex-scanner-eta.vercel.app/api/health
   ```
   Expected: JSON with `"status": "ok"` and the 8 strategy names.
 - Test a scan:
   ```
-  https://forex-scanner.vercel.app/api/scan?pairs=EURUSD&interval=1h&period=1mo
+  https://forex-scanner-eta.vercel.app/api/scan?pairs=EURUSD&interval=1h&period=1mo
   ```
 - Open a chart:
   ```
-  https://forex-scanner.vercel.app/api/pair/EURUSD/chart?interval=1h&period=1mo
+  https://forex-scanner-eta.vercel.app/api/pair/EURUSD/chart?interval=1h&period=1mo
   ```
 
 ---

@@ -6,7 +6,11 @@ How to use the dashboard, understand the signals, and get the most out of the 8-
 
 ## 1. Opening the app
 
-**Live on Vercel:** open `https://forex-scanner.vercel.app` in your browser.
+**Live on Vercel:** open `https://forex-scanner-eta.vercel.app` in your browser.
+> ⚠️ Do **not** use `https://forex-scanner.vercel.app` — that bare domain belongs to a
+> different app (a React "Forex Signal Scanner"). Our FastAPI app is at
+> `https://forex-scanner-eta.vercel.app` (Vercel added the `-eta` suffix because the
+> plain name was taken).
 (If you see a Vercel login page, you need to disable Deployment Protection: Vercel dashboard → project `forex-scanner` → Settings → Deployment Protection → turn off Vercel Authentication.)
 
 **Run locally (optional):**
