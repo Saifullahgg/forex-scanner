@@ -114,6 +114,14 @@ body {
 .pill.dim { color: var(--text-dim); }
 .pill.ok { color: var(--green); border-color: rgba(0, 255, 136, 0.35); background: rgba(0, 255, 136, 0.08); }
 .pill.bad { color: var(--red); border-color: rgba(255, 68, 102, 0.35); background: rgba(255, 68, 102, 0.08); }
+.pill.live { color: var(--green); border-color: rgba(0, 255, 136, 0.35); background: rgba(0, 255, 136, 0.08); animation: pulse 2s infinite; }
+.pill.live.pos { color: var(--green); }
+.pill.live.neg { color: var(--red); border-color: rgba(255, 68, 102, 0.35); background: rgba(255, 68, 102, 0.08); }
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.25); }
+  50% { box-shadow: 0 0 0 5px rgba(0, 255, 136, 0); }
+}
 
 /* =========================================================================
    TAB BAR

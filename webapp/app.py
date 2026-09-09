@@ -51,6 +51,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # In-memory TTL cache to respect Yahoo Finance rate limits.
 data_cache = TTLCache(ttl=300.0)
+# Short-lived cache so live marking uses near-real-time 1-minute closes.
+live_cache = TTLCache(ttl=15.0)
 _cache_lock = threading.Lock()
 
 # Shared paper-trading / bot / OANDA state (process-local, demo-grade).
@@ -65,6 +67,28 @@ def _latest_price(pair: str) -> Optional[float]:
     if df is None or df.empty:
         return None
     return float(df.iloc[-1]["Close"])
+
+
+def _fetch_live(pair: str) -> Optional[pd.DataFrame]:
+    """Fetch 1-minute candles with a short (15s) TTL for live marking."""
+    key = (pair, "1m", "1d")
+    with _cache_lock:
+        cached = live_cache.get(key)
+        if cached is not None:
+            return cached
+    df = fetch_data(pair, interval="1m", period="1d")
+    if df is not None and not df.empty:
+        with _cache_lock:
+            live_cache.set(key, df)
+    return df
+
+
+def _live_price(pair: str) -> Optional[float]:
+    """Best-effort live price; falls back to the 15m close when 1m is unavailable."""
+    df = _fetch_live(pair)
+    if df is not None and not df.empty:
+        return float(df.iloc[-1]["Close"])
+    return _latest_price(pair)
 
 VALID_INTERVALS = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
 VALID_PERIODS = ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
@@ -319,8 +343,11 @@ def pair_chart(
 # ------------------------------ Demo trading ------------------------------
 @app.get("/api/demo/account")
 def demo_account() -> dict:
-    prices = {pos["pair"]: _latest_price(pos["pair"]) for pos in trader.positions.values()}
-    return trader.account(prices)
+    prices = {pos["pair"]: _live_price(pos["pair"]) for pos in trader.positions.values()}
+    trader.mark_prices(prices)
+    acc = trader.account(prices)
+    acc["live_ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return acc
 
 
 @app.get("/api/demo/positions")
@@ -334,7 +361,7 @@ def demo_order(payload: dict) -> dict:
     if not (len(pair) == 6 and pair.isalpha()):
         raise HTTPException(status_code=400, detail="Invalid pair format")
     side = str(payload.get("side", "BUY")).upper()
-    price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
+    price = float(payload.get("price") or 0) or (_live_price(pair) or 0)
     if price <= 0:
         raise HTTPException(status_code=400, detail="Could not resolve a price")
     try:
@@ -368,7 +395,7 @@ def demo_margin(payload: dict) -> dict:
     pair = str(payload.get("pair", "")).upper()
     if not (len(pair) == 6 and pair.isalpha()):
         raise HTTPException(status_code=400, detail="Invalid pair format")
-    price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
+    price = float(payload.get("price") or 0) or (_live_price(pair) or 0)
     if price <= 0:
         raise HTTPException(status_code=400, detail="Could not resolve a price")
     try:
@@ -419,7 +446,7 @@ def demo_close(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail="Missing position id")
     if price <= 0:
         pair = next((p["pair"] for p in trader.positions.values() if p["id"] == pos_id), None)
-        price = _latest_price(pair) if pair else None
+        price = _live_price(pair) if pair else None
         if price is None:
             raise HTTPException(status_code=400, detail="Could not resolve close price")
     trade = trader.close_position(pos_id, price)

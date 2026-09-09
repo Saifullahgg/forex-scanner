@@ -194,6 +194,47 @@ class PaperTrader:
                 closed += 1
         return closed
 
+    def mark_prices(self, prices: Dict[str, float]) -> dict:
+        """Mark open positions to market, auto-closing any whose SL/TP was hit.
+
+        Called before building an account snapshot so unrealized P&L reflects
+        real-market prices and stop-loss / take-profit levels execute when
+        reached. Runs inside the lock without re-acquiring it (close_position
+        acquires the lock itself).
+
+        Returns {"closed": [trade, ...], "open": int}.
+        """
+        with self._lock:
+            closed_trades: List[dict] = []
+            remaining: Dict[str, dict] = {}
+            for pos_id, pos in self.positions.items():
+                mark = prices.get(pos["pair"])
+                if mark is None:
+                    remaining[pos_id] = pos
+                    continue
+                direction = 1 if pos["side"] == "BUY" else -1
+                hit = None
+                if pos["sl"] is not None and direction * (mark - pos["sl"]) <= 0:
+                    hit = pos["sl"]
+                elif pos["tp"] is not None and direction * (mark - pos["tp"]) >= 0:
+                    hit = pos["tp"]
+                if hit is None:
+                    remaining[pos_id] = pos
+                    continue
+                pnl = self._pnl(pos, hit)
+                self.balance += pnl
+                trade = {
+                    **pos,
+                    "close_price": round(hit, 6),
+                    "close_time": self._now(),
+                    "pnl": round(pnl, 2),
+                    "pnl_pips": self._pips(pos, hit),
+                }
+                self.closed.append(trade)
+                closed_trades.append(trade)
+            self.positions = remaining
+            return {"closed": closed_trades, "open": len(remaining)}
+
     # ------------------------------------------------------------------
     # Monthly assessment grid used by the OANDA-style tab
     # ------------------------------------------------------------------

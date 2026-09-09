@@ -250,3 +250,79 @@ def test_open_order_margin_account_with_leverage():
     trader.open_order("EURUSD", "BUY", 100000, 1.08, leverage=100)  # 1 standard lot
     acc = trader.account()
     assert acc["margin_used"] == pytest.approx(1080.0, rel=1e-6)
+
+
+# ----------------------------------------------------------------------
+# Live marking + SL/TP auto-close (mark_prices)
+# ----------------------------------------------------------------------
+
+
+def test_mark_prices_keeps_position_within_range():
+    trader = PaperTrader()
+    trader.open_order("EURUSD", "BUY", 10000, 1.0800, sl=1.0700, tp=1.1000)
+    result = trader.mark_prices({"EURUSD": 1.0850})
+    assert result == {"closed": [], "open": 1}
+    assert trader.account()["open_count"] == 1
+
+
+def test_mark_prices_auto_closes_stop_loss_buy():
+    trader = PaperTrader(starting_balance=100_000.0)
+    trader.open_order("EURUSD", "BUY", 10000, 1.0800, sl=1.0700, tp=1.1000)
+    result = trader.mark_prices({"EURUSD": 1.0650})
+    assert result["open"] == 0
+    assert len(result["closed"]) == 1
+    trade = result["closed"][0]
+    # Closed at the SL level, not the (worse) market price.
+    assert trade["close_price"] == pytest.approx(1.0700, rel=1e-6)
+    # (1.07 - 1.08) * 10000 = -100
+    assert trade["pnl"] == pytest.approx(-100.0, abs=1e-2)
+    acc = trader.account()
+    assert acc["open_count"] == 0
+    assert acc["closed_count"] == 1
+    assert acc["balance"] == pytest.approx(99_900.0, rel=1e-6)
+
+
+def test_mark_prices_auto_closes_take_profit_sell():
+    trader = PaperTrader(starting_balance=100_000.0)
+    trader.open_order("USDJPY", "SELL", 1000, 150.00, sl=151.00, tp=149.00)
+    result = trader.mark_prices({"USDJPY": 148.80})
+    assert result["open"] == 0
+    trade = result["closed"][0]
+    # Closed at the TP level (149.00), giving (150 - 149) * 1000 = +1000.
+    assert trade["close_price"] == pytest.approx(149.00, rel=1e-6)
+    assert trade["pnl"] == pytest.approx(1000.0, abs=1e-2)
+    acc = trader.account()
+    assert acc["balance"] == pytest.approx(101_000.0, rel=1e-6)
+
+
+def test_mark_prices_skips_missing_price():
+    trader = PaperTrader()
+    trader.open_order("EURUSD", "BUY", 10000, 1.0800, sl=1.0700)
+    result = trader.mark_prices({})  # no price available
+    assert result == {"closed": [], "open": 1}
+    assert trader.account()["open_count"] == 1
+
+
+def test_mark_prices_closes_only_affected_positions():
+    trader = PaperTrader()
+    trader.open_order("EURUSD", "BUY", 10000, 1.0800, sl=1.0700, tp=1.1000)
+    trader.open_order("GBPUSD", "SELL", 10000, 1.2700, sl=1.2900, tp=1.2500)
+    result = trader.mark_prices({"EURUSD": 1.0650, "GBPUSD": 1.2750})
+    assert result["open"] == 1
+    assert len(result["closed"]) == 1
+    assert result["closed"][0]["pair"] == "EURUSD"
+    remaining = trader.account()["open_positions"]
+    assert len(remaining) == 1
+    assert remaining[0]["pair"] == "GBPUSD"
+
+
+def test_mark_prices_then_account_shows_live_pnl():
+    trader = PaperTrader(starting_balance=100_000.0)
+    trader.open_order("EURUSD", "BUY", 10000, 1.0800)
+    trader.mark_prices({"EURUSD": 1.0850})
+    acc = trader.account({"EURUSD": 1.0850})
+    assert acc["unrealized_pnl"] == pytest.approx(50.0, rel=1e-6)
+    assert acc["equity"] == pytest.approx(100_050.0, rel=1e-6)
+    pos = acc["open_positions"][0]
+    assert pos["current_price"] == pytest.approx(1.0850, rel=1e-6)
+    assert pos["unrealized_pnl"] == pytest.approx(50.0, rel=1e-6)

@@ -20,6 +20,8 @@ const state = {
   modalResult: null,    // ScanResult dict backing the modal
   modalTab: "chart",
   demoSide: "BUY",
+  demoTimer: null,
+  demoMs: 5000,
   botState: null,
   clockTimer: null,
 };
@@ -108,7 +110,16 @@ function switchTab(name) {
     }
     if (!state.chartLoaded) loadChart();
   }
-  if (name === "demo") refreshDemo();
+  if (name === "demo") {
+    refreshDemo();
+    if (state.demoTimer) clearInterval(state.demoTimer);
+    state.demoTimer = setInterval(() => {
+      if ($("#panel-demo") && $("#panel-demo").classList.contains("active")) refreshDemo();
+    }, state.demoMs);
+  } else if (state.demoTimer) {
+    clearInterval(state.demoTimer);
+    state.demoTimer = null;
+  }
   if (name === "oanda") refreshOanda();
   if (name === "bot") loadBotState();
   if (name === "clock") refreshClock();
@@ -478,6 +489,14 @@ async function refreshDemo() {
     if (acc.unrealized_pnl > 0) upnlEl.classList.add("pos");
     else if (acc.unrealized_pnl < 0) upnlEl.classList.add("neg");
 
+    const liveEl = $("#demo-live");
+    if (liveEl) {
+      liveEl.classList.remove("pos", "neg");
+      if (acc.unrealized_pnl > 0) liveEl.classList.add("pos");
+      else if (acc.unrealized_pnl < 0) liveEl.classList.add("neg");
+      liveEl.textContent = acc.live_ts ? `live • ${shortTime(acc.live_ts)}` : "live";
+    }
+
     setHtml("demo-positions", (acc.open_positions || []).map((p) => `
       <tr>
         <td class="mono">${escapeHtml(p.id)}</td>
@@ -485,6 +504,7 @@ async function refreshDemo() {
         <td>${actionBadge(p.side)}</td>
         <td class="mono">${Number(p.units).toLocaleString()}</td>
         <td class="mono">${fmtPrice(p.open_price)}</td>
+        <td class="mono">${fmtPrice(p.current_price)}</td>
         <td class="mono ${pnlClass(p.unrealized_pnl)}">${fmtPnl(p.unrealized_pnl)}</td>
         <td><button class="btn sm danger" data-close="${escapeHtml(p.id)}">Close</button></td>
       </tr>`).join(""));
