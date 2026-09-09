@@ -19,6 +19,34 @@ def pip_size(price: float) -> float:
     return 0.01 if price >= 50 else 0.0001
 
 
+# Standard forex lot sizes expressed in base-currency units.
+#   micro lot = 1,000 units, mini lot = 10,000 units, standard lot = 100,000 units.
+LOT_SIZES = {
+    "micro": 1_000,
+    "mini": 10_000,
+    "standard": 100_000,
+}
+
+# The quick "Take Demo Trade" flow expresses size in standard lots and the
+# user's account leverage (e.g. 1:100). Margin is then notional / leverage,
+# matching how the reference app presents the trade before execution.
+DEFAULT_LEVERAGE = 100.0
+DEFAULT_UNITS = 10_000.0
+
+
+def lots_to_units(lots: float, lot_size: str = "standard") -> float:
+    """Convert a number of lots into base-currency units.
+
+    Uses the conventional 1 standard lot = 100,000 units. Fractional lots are
+    supported (0.1 = 10,000 units, 0.01 = 1,000 units). Raises ValueError for
+    non-positive sizes.
+    """
+    lots = float(lots)
+    if lots <= 0:
+        raise ValueError("lots must be positive")
+    return lots * LOT_SIZES.get(lot_size, LOT_SIZES["standard"])
+
+
 class PaperTrader:
     """A tiny in-memory futures-style paper trading account."""
 
@@ -109,6 +137,7 @@ class PaperTrader:
         sl: Optional[float] = None,
         tp: Optional[float] = None,
         label: str = "demo",
+        leverage: Optional[float] = None,
     ) -> dict:
         with self._lock:
             side = side.upper()
@@ -116,7 +145,13 @@ class PaperTrader:
                 raise ValueError("side must be BUY or SELL")
             if units <= 0:
                 raise ValueError("units must be positive")
-            margin = abs(units) * open_price  # simple notional margin
+            if leverage is not None:
+                leverage = float(leverage)
+                if leverage <= 0:
+                    raise ValueError("leverage must be positive")
+                margin = abs(units) * open_price / leverage
+            else:
+                margin = abs(units) * open_price  # simple notional margin
             pos = {
                 "id": self._next_id(),
                 "pair": pair,
@@ -127,6 +162,7 @@ class PaperTrader:
                 "tp": round(tp, 6) if tp is not None else None,
                 "open_time": self._now(),
                 "label": label,
+                "leverage": round(leverage, 2) if leverage else None,
                 "margin": round(margin, 2),
             }
             self.positions[pos["id"]] = pos

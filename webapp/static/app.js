@@ -301,7 +301,12 @@ function renderResults(data) {
         <span class="n">${r.neutral_votes || 0}●</span>
       </td>
       <td class="reasons">${escapeHtml((r.reasons || []).join(" · "))}</td>
-      <td><button class="btn sm" data-detail="${escapeHtml(r.pair)}">Details</button></td>
+      <td class="row-actions">
+        ${(r.action === "BUY" || r.action === "SELL") && r.price != null
+          ? `<button class="btn sm primary" data-demo="${escapeHtml(r.pair)}">⚡ Demo Trade</button>`
+          : `<span class="dim">—</span>`}
+        <button class="btn sm" data-detail="${escapeHtml(r.pair)}">Details</button>
+      </td>
     </tr>`;
   }).join("");
 
@@ -309,6 +314,12 @@ function renderResults(data) {
     btn.addEventListener("click", () => {
       const r = state.results.find((x) => x.pair === btn.dataset.detail);
       if (r) openModal(r);
+    });
+  });
+  body.querySelectorAll("button[data-demo]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = state.results.find((x) => x.pair === btn.dataset.demo);
+      if (r) openTradeModal(r);
     });
   });
 }
@@ -940,6 +951,8 @@ function renderModalTab(tab) {
   if (tab === "chart") {
     body.innerHTML = `<div id="modal-chart-container" class="chart-container"></div>`;
     loadModalChart(r);
+  } else if (tab === "trade") {
+    renderTradeTab(r);
   } else if (tab === "breakdown") {
     body.innerHTML = `
       <div class="breakdown">
@@ -1002,6 +1015,134 @@ function loadModalChart(result) {
       state.modalChart.timeScale().fitContent();
     })
     .catch(() => { container.innerHTML = '<div class="empty">Chart unavailable</div>'; });
+}
+
+/* =====================================================================
+ * QUICK "TAKE DEMO TRADE" (from a scanner signal)
+ * ===================================================================== */
+function openTradeModal(result) {
+  state.modalResult = result;
+  state.modalTab = "trade";
+  setText("modal-title", `${result.pair} — Take Demo Trade`);
+  renderModalTab("trade");
+  $("#modal").classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function renderTradeTab(r) {
+  const body = $("#modal-body");
+  const side = (r.action === "SELL") ? "SELL" : "BUY";
+  body.innerHTML = `
+    <div class="trade-form">
+      <div class="trade-summary">
+        <div><span class="dim">Pair</span><span class="mono">${escapeHtml(r.pair)}</span></div>
+        <div><span class="dim">Signal</span><span>${actionBadge(r.action)}</span></div>
+        <div><span class="dim">Entry</span><span class="mono">${fmtPrice(r.price)}</span></div>
+        <div><span class="dim">SL</span><span class="mono">${r.stop_loss == null ? "-" : fmtPrice(r.stop_loss)}</span></div>
+        <div><span class="dim">TP</span><span class="mono">${r.take_profit == null ? "-" : fmtPrice(r.take_profit)}</span></div>
+      </div>
+
+      <div class="field-row"><label>Side</label>
+        <div class="segmented" id="trade-side">
+          <button class="seg buy ${side === "BUY" ? "active" : ""}" data-side="BUY">BUY</button>
+          <button class="seg sell ${side === "SELL" ? "active" : ""}" data-side="SELL">SELL</button>
+        </div>
+      </div>
+      <div class="field-row"><label>Entry Price</label>
+        <input id="trade-entry" type="number" step="0.00001" value="${r.price != null ? r.price : ""}" />
+      </div>
+      <div class="field-row"><label>Stop Loss</label>
+        <input id="trade-sl" type="number" step="0.00001" value="${r.stop_loss != null ? r.stop_loss : ""}" placeholder="optional" />
+      </div>
+      <div class="field-row"><label>Take Profit</label>
+        <input id="trade-tp" type="number" step="0.00001" value="${r.take_profit != null ? r.take_profit : ""}" placeholder="optional" />
+      </div>
+      <div class="field-row"><label>Lot Size</label>
+        <input id="trade-lots" type="number" step="0.01" min="0.01" value="0.10" />
+        <span class="hint">1 lot = 100,000 units</span>
+      </div>
+      <div class="field-row"><label>Leverage (1:x)</label>
+        <input id="trade-leverage" type="number" step="1" min="1" value="100" />
+      </div>
+
+      <div class="trade-preview" id="trade-preview">
+        <div><span class="dim">Units</span><span class="mono" id="tp-units">—</span></div>
+        <div><span class="dim">Margin</span><span class="mono" id="tp-margin">—</span></div>
+        <div><span class="dim">SL Risk</span><span class="mono" id="tp-risk">—</span></div>
+        <div><span class="dim">TP Reward</span><span class="mono" id="tp-reward">—</span></div>
+      </div>
+
+      <button class="btn primary block" id="btn-trade-execute">⚡ Execute Demo Trade</button>
+      <div id="trade-msg" class="msg hidden"></div>
+    </div>`;
+
+  // Side toggle
+  $$("#trade-side .seg").forEach((s) => {
+    s.addEventListener("click", () => {
+      $$("#trade-side .seg").forEach((x) => x.classList.toggle("active", x === s));
+      recalcTrade();
+    });
+  });
+  // Live recalc
+  ["trade-entry", "trade-sl", "trade-tp", "trade-lots", "trade-leverage"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", recalcTrade);
+  });
+  $("#btn-trade-execute").addEventListener("click", executeDemoTrade);
+  recalcTrade();
+}
+
+async function recalcTrade() {
+  const r = state.modalResult;
+  if (!r) return;
+  const side = document.querySelector("#trade-side .seg.active")?.dataset.side || "BUY";
+  const payload = {
+    pair: r.pair,
+    side,
+    price: Number($("#trade-entry")?.value) || r.price || 0,
+    lots: Number($("#trade-lots")?.value) || 0.1,
+    leverage: Number($("#trade-leverage")?.value) || 100,
+  };
+  const sl = Number($("#trade-sl")?.value);
+  const tp = Number($("#trade-tp")?.value);
+  if (sl) payload.sl = sl;
+  if (tp) payload.tp = tp;
+  try {
+    const m = await apiPost("/api/demo/margin", payload);
+    setText("tp-units", Number(m.units).toLocaleString());
+    setText("tp-margin", fmtMoney(m.margin));
+    setText("tp-risk", m.sl_risk == null ? "-" : fmtMoney(m.sl_risk));
+    setText("tp-reward", m.tp_reward == null ? "-" : fmtMoney(m.tp_reward));
+  } catch (_) {
+    setText("tp-units", "—");
+    setText("tp-margin", "—");
+    setText("tp-risk", "—");
+    setText("tp-reward", "—");
+  }
+}
+
+async function executeDemoTrade() {
+  const r = state.modalResult;
+  if (!r) return;
+  const side = document.querySelector("#trade-side .seg.active")?.dataset.side || "BUY";
+  const payload = {
+    pair: r.pair,
+    side,
+    price: Number($("#trade-entry")?.value) || r.price || 0,
+    lots: Number($("#trade-lots")?.value) || 0.1,
+    leverage: Number($("#trade-leverage")?.value) || 100,
+  };
+  const sl = Number($("#trade-sl")?.value);
+  const tp = Number($("#trade-tp")?.value);
+  if (sl) payload.sl = sl;
+  if (tp) payload.tp = tp;
+  try {
+    const pos = await apiPost("/api/demo/order", payload);
+    showMsg("trade-msg", `Opened ${side} ${r.pair} — ${Number(pos.units).toLocaleString()} units @ ${fmtPrice(pos.open_price)}`, "ok");
+    refreshDemo();
+  } catch (err) {
+    showMsg("trade-msg", err.message, "error");
+  }
 }
 
 $("#modal-tabs").addEventListener("click", (e) => {

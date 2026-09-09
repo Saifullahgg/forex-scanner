@@ -36,7 +36,14 @@ from .bot import BotController
 from .cache import TTLCache
 from .market import market_clock, rolling_calendar
 from .oanda import OandaAdapter
-from .trading import PaperTrader
+from .trading import (
+    DEFAULT_LEVERAGE,
+    DEFAULT_UNITS,
+    LOT_SIZES,
+    PaperTrader,
+    lots_to_units,
+    pip_size,
+)
 
 app = FastAPI(title="Forex Scanner Web", version="1.0.0")
 
@@ -327,11 +334,15 @@ def demo_order(payload: dict) -> dict:
     if not (len(pair) == 6 and pair.isalpha()):
         raise HTTPException(status_code=400, detail="Invalid pair format")
     side = str(payload.get("side", "BUY")).upper()
-    units = float(payload.get("units", 10000))
     price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
     if price <= 0:
         raise HTTPException(status_code=400, detail="Could not resolve a price")
     try:
+        if payload.get("lots") is not None:
+            units = lots_to_units(payload.get("lots"))
+        else:
+            units = float(payload.get("units", DEFAULT_UNITS))
+        leverage = float(payload["leverage"]) if payload.get("leverage") else None
         pos = trader.open_order(
             pair=pair,
             side=side,
@@ -340,10 +351,64 @@ def demo_order(payload: dict) -> dict:
             sl=float(payload["sl"]) if payload.get("sl") else None,
             tp=float(payload["tp"]) if payload.get("tp") else None,
             label="demo",
+            leverage=leverage,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return pos
+
+
+@app.post("/api/demo/margin")
+def demo_margin(payload: dict) -> dict:
+    """Quick trade preview used by the "Take Demo Trade" flow.
+
+    Returns units, notional, margin (with leverage) and a conservative SL/TP
+    risk preview so the UI can show the trade before executing it.
+    """
+    pair = str(payload.get("pair", "")).upper()
+    if not (len(pair) == 6 and pair.isalpha()):
+        raise HTTPException(status_code=400, detail="Invalid pair format")
+    price = float(payload.get("price") or 0) or (_latest_price(pair) or 0)
+    if price <= 0:
+        raise HTTPException(status_code=400, detail="Could not resolve a price")
+    try:
+        if payload.get("lots") is not None:
+            units = lots_to_units(payload.get("lots"))
+        else:
+            units = float(payload.get("units", DEFAULT_UNITS))
+        leverage = float(payload.get("leverage") or DEFAULT_LEVERAGE)
+        if leverage <= 0:
+            raise ValueError("leverage must be positive")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    notional = units * price
+    margin = notional / leverage
+    sl = float(payload["sl"]) if payload.get("sl") else None
+    tp = float(payload["tp"]) if payload.get("tp") else None
+    side = str(payload.get("side", "BUY")).upper()
+    direction = 1 if side == "BUY" else -1
+
+    def risk(level):
+        if level is None:
+            return None
+        return round(direction * (level - price) * units, 2)
+
+    return {
+        "pair": pair,
+        "side": side,
+        "units": round(units, 4),
+        "lots": round(units / LOT_SIZES["standard"], 4),
+        "price": round(price, 6),
+        "notional": round(notional, 2),
+        "margin": round(margin, 2),
+        "leverage": round(leverage, 2),
+        "pip_size": pip_size(price),
+        "sl": sl,
+        "tp": tp,
+        "sl_risk": risk(sl),
+        "tp_reward": risk(tp),
+    }
 
 
 @app.post("/api/demo/close")

@@ -2,7 +2,13 @@
 
 import pytest
 
-from webapp.trading import PaperTrader, pip_size
+from webapp.trading import (
+    DEFAULT_LEVERAGE,
+    LOT_SIZES,
+    PaperTrader,
+    lots_to_units,
+    pip_size,
+)
 
 
 def test_pip_size():
@@ -187,3 +193,60 @@ def test_win_rate_and_total_pnl_with_mixed_results():
     assert acc["closed_count"] == 2
     assert acc["win_rate"] == 50.0
     assert acc["total_pnl"] == pytest.approx(0.0, rel=1e-6)
+
+
+# ----------------------------------------------------------------------
+# Lot-size and leverage support (the "Take Demo Trade" quick-execute flow)
+# ----------------------------------------------------------------------
+
+
+def test_lot_sizes_constants():
+    assert LOT_SIZES["micro"] == 1_000
+    assert LOT_SIZES["mini"] == 10_000
+    assert LOT_SIZES["standard"] == 100_000
+
+
+def test_lots_to_units_standard():
+    assert lots_to_units(1) == 100_000
+    assert lots_to_units(0.1) == 10_000
+    assert lots_to_units(0.01) == 1_000
+    assert lots_to_units(2) == 200_000
+
+
+def test_lots_to_units_invalid():
+    with pytest.raises(ValueError, match="lots must be positive"):
+        lots_to_units(0)
+    with pytest.raises(ValueError, match="lots must be positive"):
+        lots_to_units(-1)
+
+
+def test_open_order_with_leverage():
+    trader = PaperTrader()
+    # Notional = 10000 * 1.08 = 10800; at 1:100 the margin is 108.
+    pos = trader.open_order(
+        "EURUSD", "BUY", 10000, 1.08, sl=1.07, tp=1.10, leverage=100
+    )
+    assert pos["leverage"] == 100
+    assert pos["margin"] == pytest.approx(108.0, rel=1e-6)
+
+
+def test_open_order_without_leverage_keeps_notional_margin():
+    trader = PaperTrader()
+    pos = trader.open_order("EURUSD", "BUY", 10000, 1.08)
+    assert pos["leverage"] is None
+    assert pos["margin"] == pytest.approx(10800.0, rel=1e-6)
+
+
+def test_open_order_invalid_leverage():
+    trader = PaperTrader()
+    with pytest.raises(ValueError, match="leverage must be positive"):
+        trader.open_order("EURUSD", "BUY", 10000, 1.08, leverage=0)
+    with pytest.raises(ValueError, match="leverage must be positive"):
+        trader.open_order("EURUSD", "BUY", 10000, 1.08, leverage=-50)
+
+
+def test_open_order_margin_account_with_leverage():
+    trader = PaperTrader()
+    trader.open_order("EURUSD", "BUY", 100000, 1.08, leverage=100)  # 1 standard lot
+    acc = trader.account()
+    assert acc["margin_used"] == pytest.approx(1080.0, rel=1e-6)

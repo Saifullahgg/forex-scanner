@@ -816,6 +816,57 @@ select option { background: var(--surface); color: var(--text); }
 }
 
 /* =========================================================================
+   TRADE FORM (quick "Take Demo Trade" modal tab)
+   ========================================================================= */
+.dim { color: var(--text-dim); }
+
+.hint { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.trade-form { display: flex; flex-direction: column; gap: 4px; }
+
+.trade-summary,
+.trade-preview {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.trade-summary > div,
+.trade-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.trade-summary .dim,
+.trade-preview .dim { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.trade-preview {
+  grid-template-columns: repeat(4, 1fr);
+  border-color: rgba(68, 136, 255, 0.35);
+  background: rgba(68, 136, 255, 0.05);
+}
+
+@media (max-width: 560px) {
+  .trade-preview { grid-template-columns: 1fr 1fr; }
+  .trade-summary { grid-template-columns: 1fr; }
+}
+
+/* =========================================================================
    RESPONSIVE
    ========================================================================= */
 @media (max-width: 900px) {
